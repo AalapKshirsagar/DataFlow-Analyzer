@@ -60,7 +60,6 @@ function createNode(type, x, y, customTitle) {
   node.innerText = node.dataset.title;
   node.onclick = () => selectNode(node);
 
-  // Double-clicking a Start node can also run the workflow
   if (type === "start") {
     node.ondblclick = () => runWorkflow();
   }
@@ -72,7 +71,6 @@ function createNode(type, x, y, customTitle) {
 // Select node
 function selectNode(node) {
   selectedNode = node;
-
   document.getElementById("prop-title").value = node.dataset.title;
   document.getElementById("prop-desc").value = node.dataset.desc;
   document.getElementById("prop-owner").value = node.dataset.owner;
@@ -168,11 +166,9 @@ function downloadFile(filename, content, mimeType) {
 }
 
 function exportWorkflowFiles(steps) {
-  // JSON
   const jsonContent = JSON.stringify(steps, null, 2);
   downloadFile("workflow.json", jsonContent, "application/json");
 
-  // TXT
   let txt = "Workflow Steps\n\n";
   steps.forEach(s => {
     txt += `${s.step}. ${s.title} [${s.type}]\n`;
@@ -183,7 +179,6 @@ function exportWorkflowFiles(steps) {
   });
   downloadFile("workflow.txt", txt, "text/plain");
 
-  // CSV
   let csv = "Step,Title,Type,Owner,EstimatedTime,Description\n";
   steps.forEach(s => {
     const row = [
@@ -216,12 +211,10 @@ async function runWorkflow() {
     return;
   }
 
-  // Clear previous run classes
   orderedNodes.forEach(n => {
     n.classList.remove("running", "completed");
   });
 
-  // Animate through steps
   for (const node of orderedNodes) {
     node.classList.add("running");
     await sleep(700);
@@ -234,6 +227,25 @@ async function runWorkflow() {
 }
 
 // ================== LOAN & RISK ANALYSIS ==================
+
+// Currency symbols for international support
+const currencySymbols = {
+  INR: "₹",
+  USD: "$",
+  EUR: "€",
+  GBP: "£",
+  AED: "د.إ",
+  SGD: "S$",
+  CNY: "¥",
+  CAD: "C$",
+  AUD: "A$",
+};
+
+function formatCurrency(amount, currency) {
+  const symbol = currencySymbols[currency] || "";
+  return symbol + Number(amount).toLocaleString("en-US");
+}
+
 const fileInput = document.getElementById("dataFile");
 const kpiSection = document.getElementById("kpiSection");
 const summarySection = document.getElementById("summarySection");
@@ -264,8 +276,6 @@ function handleFileUpload() {
   reader.readAsText(file);
 }
 
-// --- CSV PARSING ---
-
 function parseCSV(text) {
   return text
     .split("\n")
@@ -293,7 +303,6 @@ function rowsToObjects(rows) {
   return objects;
 }
 
-// handle simple quoted values
 function splitCsvRow(row) {
   const result = [];
   let current = "";
@@ -317,7 +326,7 @@ function splitCsvRow(row) {
   return result.map(v => v.trim());
 }
 
-// --- ANALYSIS LOGIC ---
+// ---- ANALYSIS LOGIC ----
 
 function analyzeClients(rows) {
   const today = new Date();
@@ -325,13 +334,14 @@ function analyzeClients(rows) {
   let totalPaid = 0;
 
   const clientMap = new Map();
-  const clientsWithRisk = [];
 
   rows.forEach(r => {
-    const id = r.client_id || r.client_name || "";
+    const id = r.client_id || "";
     if (!id) return;
 
     const name = r.client_name || id;
+    const country = r.country || "-";
+    const currency = r.currency || "INR";
 
     const loanAmount = parseFloat(r.loan_amount || "0") || 0;
     const paid = parseFloat(r.amount_paid || "0") || 0;
@@ -345,20 +355,15 @@ function analyzeClients(rows) {
 
     let daysOverdue = 0;
     let isOverdue = false;
+
     if (dueDate && outstanding > 0 && today > dueDate) {
-      const diffMs = today - dueDate;
-      daysOverdue = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-      if (daysOverdue < 0) daysOverdue = 0;
+      daysOverdue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
       isOverdue = daysOverdue > 0;
     }
 
-    // risk categorization
     let risk = "low";
-    if ((isOverdue && daysOverdue > 30) || outstanding > 25000) {
-      risk = "high";
-    } else if (outstanding > 0 || isOverdue) {
-      risk = "medium";
-    }
+    if ((isOverdue && daysOverdue > 30) || outstanding > 25000) risk = "high";
+    else if (outstanding > 0 || isOverdue) risk = "medium";
 
     totalLoan += loanAmount;
     totalPaid += paid;
@@ -367,6 +372,8 @@ function analyzeClients(rows) {
       clientMap.set(id, {
         clientId: id,
         clientName: name,
+        country,
+        currency,
         loanAmount: 0,
         paidAmount: 0,
         outstanding: 0,
@@ -374,49 +381,43 @@ function analyzeClients(rows) {
         isOverdue: false,
         risk: "low",
         latestDueDate: dueDate,
-        lastPaymentDate: lastPaymentDate
+        lastPaymentDate
       });
     }
 
-    const agg = clientMap.get(id);
-    agg.loanAmount += loanAmount;
-    agg.paidAmount += paid;
-    agg.outstanding += outstanding;
-    if (daysOverdue > agg.maxDaysOverdue) {
-      agg.maxDaysOverdue = daysOverdue;
-    }
-    if (isOverdue) agg.isOverdue = true;
-    if (!agg.latestDueDate || (dueDate && dueDate > agg.latestDueDate)) {
-      agg.latestDueDate = dueDate;
-    }
+    const c = clientMap.get(id);
+    c.loanAmount += loanAmount;
+    c.paidAmount += paid;
+    c.outstanding += outstanding;
+    if (daysOverdue > c.maxDaysOverdue) c.maxDaysOverdue = daysOverdue;
+    if (isOverdue) c.isOverdue = true;
 
     const riskRank = { low: 1, medium: 2, high: 3 };
-    if (riskRank[risk] > riskRank[agg.risk]) {
-      agg.risk = risk;
+    if (riskRank[risk] > riskRank[c.risk]) c.risk = risk;
+
+    if (!c.latestDueDate || (dueDate && dueDate > c.latestDueDate)) {
+      c.latestDueDate = dueDate;
     }
   });
 
   const clients = Array.from(clientMap.values());
 
-  const totalClients = clients.length;
-  const totalOutstanding = clients.reduce((sum, c) => sum + c.outstanding, 0);
   const overdueClients = clients.filter(c => c.isOverdue && c.outstanding > 0);
-  const overdueAmount = overdueClients.reduce((sum, c) => sum + c.outstanding, 0);
+  const overdueAmount = overdueClients.reduce((s, c) => s + c.outstanding, 0);
+  const totalOutstanding = clients.reduce((sum, c) => sum + c.outstanding, 0);
 
   const clientsWithBalance = clients
     .filter(c => c.outstanding > 0 || c.isOverdue)
     .sort((a, b) => {
-      const riskRank = { high: 3, medium: 2, low: 1 };
-      const diff = riskRank[b.risk] - riskRank[a.risk];
+      const rank = { high: 3, medium: 2, low: 1 };
+      const diff = rank[b.risk] - rank[a.risk];
       if (diff !== 0) return diff;
       return b.outstanding - a.outstanding;
     });
 
   return {
-    today,
+    totalClients: clients.length,
     totalLoan,
-    totalPaid,
-    totalClients,
     totalOutstanding,
     overdueClientsCount: overdueClients.length,
     overdueAmount,
@@ -424,19 +425,15 @@ function analyzeClients(rows) {
   };
 }
 
-// --- RENDERING ---
-
-function formatCurrency(n) {
-  return "₹" + n.toLocaleString("en-IN", { maximumFractionDigits: 0 });
-}
+// ---- RENDERING ----
 
 function renderKpis(a) {
   kpiSection.hidden = false;
   document.getElementById("kpiClients").textContent = a.totalClients;
-  document.getElementById("kpiTotalLoan").textContent = formatCurrency(a.totalLoan);
-  document.getElementById("kpiOutstanding").textContent = formatCurrency(a.totalOutstanding);
+  document.getElementById("kpiTotalLoan").textContent = formatCurrency(a.totalLoan, "USD");
+  document.getElementById("kpiOutstanding").textContent = formatCurrency(a.totalOutstanding, "USD");
   document.getElementById("kpiOverdueClients").textContent = a.overdueClientsCount;
-  document.getElementById("kpiOverdueAmount").textContent = formatCurrency(a.overdueAmount);
+  document.getElementById("kpiOverdueAmount").textContent = formatCurrency(a.overdueAmount, "USD");
 }
 
 function renderSummary(a) {
@@ -449,36 +446,22 @@ function renderSummary(a) {
   const lines = [];
 
   lines.push(
-    `You uploaded data for <b>${a.totalClients}</b> clients with a total loan exposure of <b>${formatCurrency(
-      a.totalLoan
+    `You uploaded data for <b>${a.totalClients}</b> clients with a combined loan exposure of <b>${formatCurrency(
+      a.totalLoan,
+      "USD"
     )}</b>.`
   );
 
   lines.push(
-    `Out of this, <b>${formatCurrency(
-      a.totalOutstanding
-    )}</b> is still outstanding, and <b>${formatCurrency(
-      a.overdueAmount
-    )}</b> is currently overdue.`
+    `A total of <b>${formatCurrency(a.totalOutstanding, "USD")}</b> remains outstanding, while <b>${formatCurrency(
+      a.overdueAmount,
+      "USD"
+    )}</b> is overdue.`
   );
 
   lines.push(
-    `<b>${a.overdueClientsCount}</b> clients (${overduePct}% of the portfolio) are overdue on at least one loan.`
+    `<b>${a.overdueClientsCount}</b> clients (${overduePct}% of the portfolio) are overdue on payments.`
   );
-
-  if (a.overdueClientsCount === 0 && a.totalOutstanding === 0) {
-    lines.push(
-      `All loans appear to be fully repaid. This portfolio looks <b>very low risk</b> at the moment.`
-    );
-  } else if (a.overdueAmount > 0 && overduePct >= 30) {
-    lines.push(
-      `The portfolio shows a <b>concentrated risk</b> with a significant share of overdue clients. Prioritize follow-ups, restructuring or collection strategies for high-risk accounts.`
-    );
-  } else if (a.overdueAmount > 0) {
-    lines.push(
-      `There is some overdue exposure, but it is not yet dominant. Suggest prioritizing <b>clients with high outstanding and over 30 days overdue</b> for immediate action.`
-    );
-  }
 
   document.getElementById("summaryText").innerHTML = lines.join("<br><br>");
 }
@@ -504,8 +487,10 @@ function renderTable(clients) {
 
     tr.innerHTML = `
       <td>${c.clientName}</td>
-      <td>${formatCurrency(c.loanAmount)}</td>
-      <td>${formatCurrency(c.outstanding)}</td>
+      <td>${c.country}</td>
+      <td>${c.currency}</td>
+      <td>${formatCurrency(c.loanAmount, c.currency)}</td>
+      <td>${formatCurrency(c.outstanding, c.currency)}</td>
       <td>${dueDateStr}</td>
       <td>${overdueDays}</td>
       <td></td>
@@ -515,5 +500,4 @@ function renderTable(clients) {
     tbody.appendChild(tr);
   });
 }
-
-
+  
