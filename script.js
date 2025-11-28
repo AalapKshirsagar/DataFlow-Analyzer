@@ -541,5 +541,112 @@ function renderTable(clients) {
 
     tr.lastElementChild.appendChild(riskBadge);
     tbody.appendChild(tr);
+
+    // ===========================
+// NEW: WORKFLOW → REPORT LOGIC
+// ===========================
+
+// Read client CSV (same logic as analysis tab, reused here)
+function loadClientCSVForWorkflow(callback) {
+  const input = document.getElementById("dataFile");
+  if (!input || !input.files.length) {
+    alert("Upload client CSV in Loan & Risk Analysis tab first.");
+    return;
+  }
+
+  const file = input.files[0];
+  const reader = new FileReader();
+
+  reader.onload = function (e) {
+    const text = e.target.result;
+    const rows = parseCSV(text);
+    const clients = rowsToObjects(rows);
+
+    if (!clients.length) {
+      alert("No valid client data found in CSV.");
+      return;
+    }
+
+    callback(clients);
+  };
+
+  reader.readAsText(file);
+}
+
+// Override runWorkflow to include reporting
+async function runWorkflow() {
+  const orderedNodes = getOrderedNodes();
+  if (!orderedNodes.length) {
+    alert("No steps in the workflow yet.");
+    return;
+  }
+
+  const hasStart = orderedNodes.some(n => n.dataset.type === "start");
+  if (!hasStart) {
+    alert("Add a Start step before running the workflow.");
+    return;
+  }
+
+  // Clear previous output
+  const wfOutput = document.getElementById("workflow-output");
+  const finalReport = document.getElementById("final-report");
+  wfOutput.innerHTML = "";
+  finalReport.innerHTML = "";
+
+  wfOutput.innerHTML += `<h2>Workflow Execution</h2>`;
+
+  // Animate workflow execution
+  for (const node of orderedNodes) {
+    node.classList.remove("running", "completed");
+  }
+
+  for (const node of orderedNodes) {
+    node.classList.add("running");
+
+    // Show step info
+    wfOutput.innerHTML += `
+      <div class="wf-step">
+        <h3>${node.dataset.title}</h3>
+        <p>${node.dataset.desc || "(no description)"}</p>
+        <p><b>Owner:</b> ${node.dataset.owner || "-"}</p>
+        <p><b>Duration:</b> ${node.dataset.time || "-"}</p>
+      </div>
+    `;
+
+    await sleep(800);
+    node.classList.remove("running");
+    node.classList.add("completed");
+  }
+
+  // After steps finish → generate real report
+  loadClientCSVForWorkflow(clients => {
+    const analysis = analyzeClients(clients);
+
+    finalReport.innerHTML = `
+      <h2>📊 Final Loan Risk Report</h2>
+      <p><b>Total Clients:</b> ${analysis.totalClients}</p>
+      <p><b>Total Loan Amount:</b> ${formatCurrency(analysis.totalLoan, analysis.mainCurrency)}</p>
+      <p><b>Total Outstanding:</b> ${formatCurrency(analysis.totalOutstanding, analysis.mainCurrency)}</p>
+      <p><b>Overdue Clients:</b> ${analysis.overdueClientsCount}</p>
+      <p><b>Overdue Amount:</b> ${formatCurrency(analysis.overdueAmount, analysis.mainCurrency)}</p>
+
+      <h3>High-Risk Clients</h3>
+    `;
+
+    analysis.clientsWithRisk.forEach(c => {
+      finalReport.innerHTML += `
+        <div class="wf-report-item">
+          <b>${c.clientName}</b><br>
+          Country: ${c.country}<br>
+          Outstanding: ${formatCurrency(c.outstanding, c.currency)}<br>
+          Risk: <span class="badge ${c.risk}">${c.risk.toUpperCase()}</span><br>
+          Days Overdue: ${c.maxDaysOverdue}
+        </div>
+        <hr>
+      `;
+    });
+  });
+}
+
   });
 }
