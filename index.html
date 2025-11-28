@@ -26,6 +26,7 @@
     <section id="workflowSection" class="tab-section active">
 
       <div class="workflow-layout">
+
         <!-- LEFT TOOLBAR -->
         <aside class="sidebar">
           <h2 class="heading">Workflow Tools</h2>
@@ -56,7 +57,7 @@
           </div>
         </div>
 
-        <!-- RIGHT PROPERTIES PANEL -->
+        <!-- RIGHT SIDEBAR -->
         <aside class="properties">
           <h2 class="heading">Step Properties</h2>
 
@@ -75,43 +76,50 @@
           <button id="saveButton">Save Changes</button>
           <button id="deleteButton" class="delete-btn">Delete Step</button>
         </aside>
-      </div>
 
+      </div>
     </section>
 
     <!-- ===================== LOAN & RISK ANALYSIS ===================== -->
     <section id="analysisSection" class="tab-section">
 
       <div class="analysis-page">
+
+        <!-- Upload Section -->
         <section class="card upload-section">
           <h2>1. Upload Client Data</h2>
           <input type="file" id="dataFile" accept=".csv">
           <p class="hint">
             Expected columns:
-            <code>client_id, client_name, loan_amount, amount_paid, due_date, last_payment_date</code><br>
-            Dates in format <code>YYYY-MM-DD</code>.
+            <code>client_id, client_name, loan_amount, amount_paid, due_date, last_payment_date, status</code>
           </p>
         </section>
 
+        <!-- KPI Section -->
         <section class="card kpi-section" id="kpiSection" hidden>
           <h2>2. Portfolio Overview</h2>
+
           <div class="kpi-grid">
             <div class="kpi-card">
               <span class="kpi-label">Total Clients</span>
               <span class="kpi-value" id="kpiClients">-</span>
             </div>
+
             <div class="kpi-card">
               <span class="kpi-label">Total Loan Amount</span>
               <span class="kpi-value" id="kpiTotalLoan">-</span>
             </div>
+
             <div class="kpi-card">
               <span class="kpi-label">Total Outstanding</span>
               <span class="kpi-value" id="kpiOutstanding">-</span>
             </div>
+
             <div class="kpi-card kpi-warning">
               <span class="kpi-label">Overdue Clients</span>
               <span class="kpi-value" id="kpiOverdueClients">-</span>
             </div>
+
             <div class="kpi-card kpi-danger">
               <span class="kpi-label">Overdue Amount</span>
               <span class="kpi-value" id="kpiOverdueAmount">-</span>
@@ -119,13 +127,16 @@
           </div>
         </section>
 
+        <!-- Summary Section -->
         <section class="card summary-section" id="summarySection" hidden>
           <h2>3. Summary for Consultant</h2>
           <div id="summaryText" class="summary-box"></div>
         </section>
 
+        <!-- Table Section -->
         <section class="card table-section" id="tableSection" hidden>
           <h2>4. High-Risk & Overdue Clients</h2>
+
           <table id="clientTable">
             <thead>
               <tr>
@@ -139,10 +150,11 @@
             </thead>
             <tbody></tbody>
           </table>
-          <p class="hint">Only clients with outstanding or overdue amounts are listed here.</p>
-        </section>
-      </div>
 
+          <p class="hint">Only clients with outstanding or overdue amounts are listed.</p>
+        </section>
+
+      </div>
     </section>
 
   </main>
