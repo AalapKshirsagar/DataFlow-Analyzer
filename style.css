@@ -49,6 +49,23 @@ body {
     color: #666;
 }
 
+/* RUN BUTTON */
+.run-btn {
+    width: 100%;
+    padding: 9px;
+    background: #16a34a;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-top: 6px;
+}
+
+.run-btn:hover {
+    background: #15803d;
+}
+
 /* CANVAS */
 #canvas {
     flex: 1;
@@ -70,6 +87,7 @@ body {
     transform: translate(-50%, -50%);
     color: #777;
     font-size: 18px;
+    text-align: center;
 }
 
 /* NODES */
@@ -91,6 +109,15 @@ body {
 .node.decision { background: #cfe2ff; }
 .node.api { background: #ffb3b3; }
 .node.end { background: #ffd3a4; }
+
+/* RUN ANIMATION STATES */
+.node.running {
+    box-shadow: 0 0 0 3px #4c6ef5;
+}
+
+.node.completed {
+    border-color: #15803d;
+}
 
 /* PROPERTIES PANEL */
 .properties {
