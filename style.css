@@ -354,24 +354,3 @@ main {
   background: #fee2e2;
   color: #b91c1c;
 }
-.wf-output, .wf-report {
-  background: #fff;
-  padding: 15px;
-  margin-top: 20px;
-  border-radius: 8px;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-}
-
-.wf-step {
-  padding: 10px 0;
-  border-bottom: 1px solid #ddd;
-}
-
-.wf-report-item {
-  padding: 8px 0;
-}
-
-.badge.high { background: #ff4c4c; color: white; padding: 4px 8px; border-radius: 4px; }
-.badge.medium { background: #ffa500; color: white; padding: 4px 8px; border-radius: 4px; }
-.badge.low { background: #3cb371; color: white; padding: 4px 8px; border-radius: 4px; }
-
