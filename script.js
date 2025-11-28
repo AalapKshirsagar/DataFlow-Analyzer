@@ -60,6 +60,7 @@ function createNode(type, x, y, customTitle) {
   node.innerText = node.dataset.title;
   node.onclick = () => selectNode(node);
 
+  // Double-clicking a Start node runs the workflow
   if (type === "start") {
     node.ondblclick = () => runWorkflow();
   }
@@ -105,13 +106,15 @@ document.getElementById("deleteButton").onclick = () => {
 
 // CSV Import (for workflow)
 document.getElementById("csvUpload").addEventListener("change", function () {
-  let file = this.files[0];
+  const file = this.files[0];
   if (!file) return;
 
-  let reader = new FileReader();
+  const reader = new FileReader();
 
   reader.onload = function (e) {
-    const rows = e.target.result.split("\n");
+    const rows = e.target.result.split("\n").map(r => r.trim()).filter(r => r);
+    if (!rows.length) return;
+
     rows.shift(); // remove header
 
     let y = 40;
@@ -166,9 +169,11 @@ function downloadFile(filename, content, mimeType) {
 }
 
 function exportWorkflowFiles(steps) {
+  // JSON
   const jsonContent = JSON.stringify(steps, null, 2);
   downloadFile("workflow.json", jsonContent, "application/json");
 
+  // TXT
   let txt = "Workflow Steps\n\n";
   steps.forEach(s => {
     txt += `${s.step}. ${s.title} [${s.type}]\n`;
@@ -179,6 +184,7 @@ function exportWorkflowFiles(steps) {
   });
   downloadFile("workflow.txt", txt, "text/plain");
 
+  // CSV
   let csv = "Step,Title,Type,Owner,EstimatedTime,Description\n";
   steps.forEach(s => {
     const row = [
@@ -239,11 +245,12 @@ const currencySymbols = {
   CNY: "¥",
   CAD: "C$",
   AUD: "A$",
+  BRL: "R$"
 };
 
 function formatCurrency(amount, currency) {
   const symbol = currencySymbols[currency] || "";
-  return symbol + Number(amount).toLocaleString("en-US");
+  return symbol + Number(amount || 0).toLocaleString("en-US");
 }
 
 const fileInput = document.getElementById("dataFile");
@@ -276,6 +283,7 @@ function handleFileUpload() {
   reader.readAsText(file);
 }
 
+// --- CSV PARSING ---
 function parseCSV(text) {
   return text
     .split("\n")
@@ -303,6 +311,7 @@ function rowsToObjects(rows) {
   return objects;
 }
 
+// handle simple quoted values
 function splitCsvRow(row) {
   const result = [];
   let current = "";
@@ -326,22 +335,22 @@ function splitCsvRow(row) {
   return result.map(v => v.trim());
 }
 
-// ---- ANALYSIS LOGIC ----
-
+// --- ANALYSIS LOGIC ---
 function analyzeClients(rows) {
   const today = new Date();
   let totalLoan = 0;
   let totalPaid = 0;
 
   const clientMap = new Map();
+  const currencyCounts = {};
 
   rows.forEach(r => {
-    const id = r.client_id || "";
+    const id = r.client_id || r.client_name || "";
     if (!id) return;
 
     const name = r.client_name || id;
-    const country = r.country || "-";
-    const currency = r.currency || "INR";
+    const country = r.country || "-";          // can be "USA, Texas"
+    const currency = r.currency || "USD";
 
     const loanAmount = parseFloat(r.loan_amount || "0") || 0;
     const paid = parseFloat(r.amount_paid || "0") || 0;
@@ -355,18 +364,25 @@ function analyzeClients(rows) {
 
     let daysOverdue = 0;
     let isOverdue = false;
-
     if (dueDate && outstanding > 0 && today > dueDate) {
-      daysOverdue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
+      const diffMs = today - dueDate;
+      daysOverdue = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      if (daysOverdue < 0) daysOverdue = 0;
       isOverdue = daysOverdue > 0;
     }
 
+    // Risk categorization
     let risk = "low";
-    if ((isOverdue && daysOverdue > 30) || outstanding > 25000) risk = "high";
-    else if (outstanding > 0 || isOverdue) risk = "medium";
+    if ((isOverdue && daysOverdue > 30) || outstanding > 25000) {
+      risk = "high";
+    } else if (outstanding > 0 || isOverdue) {
+      risk = "medium";
+    }
 
     totalLoan += loanAmount;
     totalPaid += paid;
+
+    currencyCounts[currency] = (currencyCounts[currency] || 0) + 1;
 
     if (!clientMap.has(id)) {
       clientMap.set(id, {
@@ -385,55 +401,65 @@ function analyzeClients(rows) {
       });
     }
 
-    const c = clientMap.get(id);
-    c.loanAmount += loanAmount;
-    c.paidAmount += paid;
-    c.outstanding += outstanding;
-    if (daysOverdue > c.maxDaysOverdue) c.maxDaysOverdue = daysOverdue;
-    if (isOverdue) c.isOverdue = true;
+    const agg = clientMap.get(id);
+    agg.loanAmount += loanAmount;
+    agg.paidAmount += paid;
+    agg.outstanding += outstanding;
+    if (daysOverdue > agg.maxDaysOverdue) {
+      agg.maxDaysOverdue = daysOverdue;
+    }
+    if (isOverdue) agg.isOverdue = true;
 
     const riskRank = { low: 1, medium: 2, high: 3 };
-    if (riskRank[risk] > riskRank[c.risk]) c.risk = risk;
+    if (riskRank[risk] > riskRank[agg.risk]) {
+      agg.risk = risk;
+    }
 
-    if (!c.latestDueDate || (dueDate && dueDate > c.latestDueDate)) {
-      c.latestDueDate = dueDate;
+    if (!agg.latestDueDate || (dueDate && dueDate > agg.latestDueDate)) {
+      agg.latestDueDate = dueDate;
     }
   });
 
   const clients = Array.from(clientMap.values());
 
-  const overdueClients = clients.filter(c => c.isOverdue && c.outstanding > 0);
-  const overdueAmount = overdueClients.reduce((s, c) => s + c.outstanding, 0);
+  const totalClients = clients.length;
   const totalOutstanding = clients.reduce((sum, c) => sum + c.outstanding, 0);
+  const overdueClients = clients.filter(c => c.isOverdue && c.outstanding > 0);
+  const overdueAmount = overdueClients.reduce((sum, c) => sum + c.outstanding, 0);
+
+  // Determine main currency (used in KPIs & top summary)
+  const mainCurrency = Object.keys(currencyCounts)
+    .sort((a, b) => (currencyCounts[b] || 0) - (currencyCounts[a] || 0))[0] || "USD";
 
   const clientsWithBalance = clients
     .filter(c => c.outstanding > 0 || c.isOverdue)
     .sort((a, b) => {
-      const rank = { high: 3, medium: 2, low: 1 };
-      const diff = rank[b.risk] - rank[a.risk];
+      const riskRank = { high: 3, medium: 2, low: 1 };
+      const diff = riskRank[b.risk] - riskRank[a.risk];
       if (diff !== 0) return diff;
       return b.outstanding - a.outstanding;
     });
 
   return {
-    totalClients: clients.length,
+    totalClients,
     totalLoan,
     totalOutstanding,
     overdueClientsCount: overdueClients.length,
     overdueAmount,
-    clientsWithRisk: clientsWithBalance
+    clientsWithRisk: clientsWithBalance,
+    mainCurrency
   };
 }
 
-// ---- RENDERING ----
+// --- RENDERING ---
 
 function renderKpis(a) {
   kpiSection.hidden = false;
   document.getElementById("kpiClients").textContent = a.totalClients;
-  document.getElementById("kpiTotalLoan").textContent = formatCurrency(a.totalLoan, "USD");
-  document.getElementById("kpiOutstanding").textContent = formatCurrency(a.totalOutstanding, "USD");
+  document.getElementById("kpiTotalLoan").textContent = formatCurrency(a.totalLoan, a.mainCurrency);
+  document.getElementById("kpiOutstanding").textContent = formatCurrency(a.totalOutstanding, a.mainCurrency);
   document.getElementById("kpiOverdueClients").textContent = a.overdueClientsCount;
-  document.getElementById("kpiOverdueAmount").textContent = formatCurrency(a.overdueAmount, "USD");
+  document.getElementById("kpiOverdueAmount").textContent = formatCurrency(a.overdueAmount, a.mainCurrency);
 }
 
 function renderSummary(a) {
@@ -446,22 +472,39 @@ function renderSummary(a) {
   const lines = [];
 
   lines.push(
-    `You uploaded data for <b>${a.totalClients}</b> clients with a combined loan exposure of <b>${formatCurrency(
+    `You uploaded data for <b>${a.totalClients}</b> clients with a total loan exposure of <b>${formatCurrency(
       a.totalLoan,
-      "USD"
+      a.mainCurrency
     )}</b>.`
   );
 
   lines.push(
-    `A total of <b>${formatCurrency(a.totalOutstanding, "USD")}</b> remains outstanding, while <b>${formatCurrency(
+    `Out of this, <b>${formatCurrency(
+      a.totalOutstanding,
+      a.mainCurrency
+    )}</b> is still outstanding, and <b>${formatCurrency(
       a.overdueAmount,
-      "USD"
-    )}</b> is overdue.`
+      a.mainCurrency
+    )}</b> is currently overdue.`
   );
 
   lines.push(
-    `<b>${a.overdueClientsCount}</b> clients (${overduePct}% of the portfolio) are overdue on payments.`
+    `<b>${a.overdueClientsCount}</b> clients (${overduePct}% of the portfolio) are overdue on at least one loan.`
   );
+
+  if (a.overdueClientsCount === 0 && a.totalOutstanding === 0) {
+    lines.push(
+      `All loans appear to be fully repaid. This portfolio looks <b>very low risk</b> at the moment.`
+    );
+  } else if (a.overdueAmount > 0 && overduePct >= 30) {
+    lines.push(
+      `The portfolio shows a <b>concentrated risk</b> with a significant share of overdue clients. Prioritize follow-ups, restructuring or collection strategies for high-risk accounts.`
+    );
+  } else if (a.overdueAmount > 0) {
+    lines.push(
+      `There is some overdue exposure, but it is not yet dominant. Suggest prioritizing <b>clients with high outstanding and over 30 days overdue</b> for immediate action.`
+    );
+  }
 
   document.getElementById("summaryText").innerHTML = lines.join("<br><br>");
 }
@@ -500,4 +543,3 @@ function renderTable(clients) {
     tbody.appendChild(tr);
   });
 }
-  
